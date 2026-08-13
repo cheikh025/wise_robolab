@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "WISE RoboLab experiment record",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "milestone",
+    "status",
+    "decision",
+    "report"
+  ],
+  "properties": {
+    "id": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "name": {
+      "type": "string"
+    },
+    "milestone": {
+      "type": "string",
+      "enum": [
+        "M0_SETUP",
+        "M1_COSMOS",
+        "M2_ROBOMETER_OFFLINE",
+        "M3_ROBOMETER_BESTOFK",
+        "M4_IDM_TRAIN",
+        "M5_IDM_VALIDATE",
+        "M6_WISE_INTEGRATE",
+        "M7_WISE_EXPERIMENT"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "planned",
+        "running",
+        "completed",
+        "failed",
+        "blocked"
+      ]
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "NONE",
+        "KEEP",
+        "REJECT",
+        "BRANCH",
+        "RETEST",
+        "MILESTONE_PASS",
+        "MILESTONE_BLOCKED"
+      ]
+    },
+    "report": {
+      "type": "string"
+    },
+    "commit": {
+      "type": "string"
+    },
+    "config": {
+      "type": "object"
+    },
+    "metrics": {
+      "type": "object"
+    },
+    "artifacts": {
+      "type": "object"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": true
+}
