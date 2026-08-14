@@ -20,6 +20,8 @@ Then follow the milestone hand-offs. Claude Code can also auto-select skills fro
 
 Prior notes in `research/bootstrap/` are useful context but are not authoritative. The agent must rediscover and verify the actual commands/interfaces on the current machine and current source revisions.
 
+The current production IDM contract is frozen in `research/IDM_DESIGN.md`. In brief, it is a direct three-view RGB-to-action model trained only on a pinned DROID source: 21,000 training episodes, 1,000 scene-disjoint validation episodes, no test split, and no proprioception, language, learned verifier, or Cosmos training data. `research/METHOD.md` defines how its output becomes WISE's deterministic `r_cons` signal.
+
 ## Two global rules
 
 1. **Validation stays small.** During setup and milestone validation, use the smallest sufficient RoboLab panel (typically 1 task/episode for smoke and 1–3 tasks with a few episodes for integration checks). Do not run the full benchmark just to prove wiring. Broader protocols are for scientific evaluation after the pipeline works.

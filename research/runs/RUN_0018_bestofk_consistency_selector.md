@@ -2,7 +2,7 @@
 
 ## Identity
 
-- status: `RUNNING`
+- status: `ABORTED_INCOMPLETE_RECORD` (five-call non-degeneracy evidence preserved; final episode outcome was not recorded)
 - run class: `validation`
 - milestone: M6_WISE_INTEGRATE (prep)
 - associated progress report: research/progress/PROGRESS_0004_IDM.md (shared)
@@ -75,8 +75,8 @@ uv run python policies/wise/run_bestofk.py --task BananaInBowlTask --num-envs 1 
 ## Execution result
 
 - start time: 2026-08-12T~22:33Z
-- end time: TBD
-- exit status: TBD
+- end time: not recorded
+- exit status: unknown; do not infer episode completion
 
 ## Observed evidence
 
@@ -93,8 +93,8 @@ uv run python policies/wise/run_bestofk.py --task BananaInBowlTask --num-envs 1 
 
 ## Outcome
 
-- pass/fail: TBD (episode in progress -- non-degeneracy criterion already looks satisfied based on 5 calls, final episode success/step-count still pending)
-- next action: TBD
+- pass/fail: `INCOMPLETE`; the five observed calls establish only that the legacy score was non-constant
+- next action: superseded by the production IDM contract. Re-run consistency selection only after the new checkpoint passes its fixed 1K validation.
 
 ## Reproducibility checklist
 

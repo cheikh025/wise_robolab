@@ -54,7 +54,7 @@ Default guidance for RoboLab validation:
 
 Do **not** run RoboLab-120 merely to prove that setup, Cosmos inference, Robometer scoring, candidate generation, or WISE wiring works. A tiny validation panel is sufficient for milestone engineering gates but **cannot support scientific performance claims**. Broader fixed task/episode protocols belong to confirmation/benchmark evaluation in M7.
 
-For DROID/IDM work, use tiny/debug subsets for schema, alignment, overfit, checkpoint, and pipeline validation. Scale the held-out/model-quality evaluation only when needed to establish that the IDM itself is credible.
+For DROID/IDM work, synthetic or tiny debug inputs may be used only to prove schema, alignment, checkpoint, and pipeline correctness. Production training uses the frozen 21,000-episode manifest, and the sole model-quality evaluation uses the frozen 1,000-episode validation manifest. Do not create a test split, pilot split, or additional validation sample and do not tune the split after seeing results.
 
 ## Source hierarchy
 
@@ -124,22 +124,24 @@ Do not use RoboLab's state-based success labels as input to the selector.
 
 ## IDM role
 
-The IDM is an independent witness. It infers the action represented by a candidate's imagined transition and is compared with Cosmos's co-generated action.
+The IDM is an independent, vision-only witness. It infers the action represented by a candidate's complete imagined video and is compared with Cosmos's paired native action. Cosmos is not part of IDM training; it is used only later to generate candidates for WISE scoring.
 
-The initial architecture should be DreamZero-IDM-like in design, adapted to DROID/Cosmos:
+The production contract is frozen in `research/IDM_DESIGN.md`:
 
-- three DROID views as the primary configuration: wrist + external 1 + external 2;
-- adjacent-frame pair fusion as the primary motion encoder, with late fusion as an ablation;
-- spatial feature tokens retained; do not inherit a hard-coded 25-token count from LIBERO;
-- camera/time/position identity embeddings;
-- Transformer context encoder;
-- learned action queries for the Cosmos action horizon;
-- DROID/Cosmos action output: 7 joint-position channels + gripper;
-- initial proprioception provided explicitly;
-- arm/joint regression and separate gripper treatment;
-- per-channel target normalization/statistics stored with the checkpoint.
+- source: `nvidia/Cosmos3-DROID` at revision `5c11a20accb11497270a5247a7f1e66ad04c956c`;
+- exact scene-disjoint manifests: 21,000 train episodes and 1,000 validation episodes, with no test split;
+- natural eligible lab x success/failure proportions, no lab oversampling, and shard-aware selection;
+- preserve every eligible frame: train stride 16, validation stride 32, with an end-aligned tail window;
+- three synchronized views in fixed order: wrist, exterior 1, exterior 2;
+- 33 consecutive frames at 15 Hz map directly to 32 action rows: frames `s..s+32` supervise rows `s..s+31`, where row `t` is the transition from frame `t` to `t+1`;
+- inputs are RGB only. Never pass initial robot state/proprioception, language, task labels, success labels, lab identity, or other metadata to the model;
+- each view is aspect-preserving letterboxed to 128 x 224, then adjacent RGB pairs are concatenated into six channels;
+- a shared ImageNet-v2 ResNet-50 through `layer3` produces a 1024 x 8 x 14 grid; full-channel spatial softmax yields a 2,048-coordinate descriptor projected to width 512;
+- learned camera embeddings and a two-layer cross-view Transformer fuse the three tokens at each transition; a six-layer, eight-head, bidirectional temporal Transformer processes the 32 fused tokens;
+- aligned direct linear heads produce seven standardized absolute joint-position channels and one binary gripper logit. There is no action-query decoder, learned verifier, auxiliary action encoder, proprioception branch, smoothness loss, or idle-window filtering;
+- train with SmoothL1 on standardized joints and weighted binary cross-entropy on gripper, and store train-only joint statistics and the complete data/model contract in the checkpoint.
 
-The exact number of frames, spatial tokens, temporal compression strategy, architecture width, and loss weights are implementation/research variables to verify, not frozen dogma.
+Treat changes to this contract as a new experiment that requires an explicit decision and a new receipt; do not silently revive superseded architectures or inputs.
 
 ## Records
 

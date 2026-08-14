@@ -1,52 +1,52 @@
 ---
 name: validate-droid-idm
-description: Validate the trained DROID IDM on held-out real DROID trajectories and Cosmos-generated imagined rollouts, including temporal alignment, per-joint/gripper metrics, view/fusion ablations, domain shift, and consistency-score behavior before full WISE integration.
+description: Validate the frozen production vision-only IDM on the sole fixed 1K DROID validation manifest, then verify direct full-dream consistency scoring before WISE integration.
 ---
 
 # Validate the DROID IDM
 
 ## Validation budget and mandatory run record
 
-When this skill is being used for setup, smoke, debugging, or milestone validation, use the **smallest sufficient** task/data budget. For RoboLab, default to 1 task/1 episode for basic wiring and usually 1–3 representative tasks with only a few episodes each for integration validation. Expand only when the current question cannot be answered reliably on the small panel. Small validation panels prove engineering correctness; they do not support performance claims.
+Use synthetic/tiny inputs only for wiring and failure reproduction. The sole model-quality evaluation is the complete frozen 1,000-episode validation manifest specified in `research/IDM_DESIGN.md`. Do not create a test split, second validation sample, pilot evaluation, or post-hoc subset. Do not tune the manifest or quotas after observing metrics.
 
 Before every non-trivial execution launched by this skill, create `research/runs/RUN_XXXX_<slug>.md` from `research/runs/RUN_TEMPLATE.md`, fill the known setup/config/commands before launch, and finalize it with outputs/results/failures afterward. Keep failed-run records. Update `research/RUNBOOK.md` as well when the run verifies a reusable setup or canonical command.
 
-## Phase 1 — held-out real DROID
+## Phase 1 - fixed real-DROID validation
 
-Evaluate on held-out trajectories not used for training.
+Before scoring, verify the checkpoint and data contract: pinned `nvidia/Cosmos3-DROID` revision, exact 21K/1K manifest digests and quotas, scene disjointness, train stride 16, validation stride 32 with end-aligned tails, preprocessing version, train-only joint statistics, and the frozen architecture identifier. Reject mismatches.
+
+Evaluate every window in the fixed 1K manifest. No validation episode may occur in training and no validation scene may overlap a training scene.
 
 Report:
 
-- normalized and physical/action-space error;
-- per-joint metrics;
-- gripper accuracy/calibration as appropriate;
+- standardized and physical/action-space joint error;
+- per-joint metrics and error versus the 32 transition positions;
+- binary gripper accuracy and class-conditional behavior;
 - error versus time in chunk;
-- simple temporal diagnostics.
+- loss and window shares by lab, success/failure, and source shard so window overlap is visible rather than mistaken for episode balance.
 
 Inspect qualitative failure cases, not only mean loss.
 
 ## Alignment stress tests
 
-Test deliberate temporal offsets where practical. Correct alignment should outperform nearby wrong offsets. If not, question whether the model is reading action-relevant motion or merely regressing priors.
+The data loader must enforce 33 consecutive synchronized RGB frames and 32 consecutive action rows, with row `t` labeling frame `t -> t+1`. Unit-level deliberate-offset checks are allowed for alignment debugging; they do not define extra evaluation datasets or replace the fixed 1K result.
 
-## View/fusion evidence
+## Frozen input and architecture
 
-Primary model is three-view. When compute allows, compare:
+Validation uses all three views and the same 128 x 224 aspect-preserving letterbox as training. It must instantiate the ResNet-50-layer3 adjacent-pair encoder, full-channel spatial softmax, two-layer cross-view fusion Transformer, six-layer bidirectional temporal Transformer, and aligned direct action heads from the checkpoint contract.
 
-- 3 views;
-- wrist + ext1;
-- wrist + ext2;
-- early vs late fusion.
+There is no required view-count, early/late-fusion, query-decoder, backbone, proprioception, language, or learned-verifier ablation campaign. Any future architecture ablation is a separately approved experiment and must not delay or contaminate validation of this production run.
 
-Use these as evidence, not mandatory exhaustive grid search.
+## Phase 2 - WISE scoring readiness
 
-## Phase 2 — Cosmos imagined futures
+This is an integration check, not IDM training and not a second held-out model-quality split. Run the frozen IDM directly on complete decoded Cosmos candidate dreams using the exact production preprocessing. Do not provide initial state/proprioception, language, candidate action, task, success, or lab metadata to the IDM.
 
-Run the IDM on decoded Cosmos dreams from the same format that full WISE will use.
+Require the verified 33 x 528 x 640 RGB dream transport. Split at row 360 into wrist 360 x 640, exterior 1 bottom-left 168 x 320, and exterior 2 bottom-right 168 x 320; letterbox each view to 128 x 224.
 
-For each candidate compare reconstructed action to Cosmos's co-generated action and log a normalized discrepancy. Characterize:
+For each candidate, predict one 32 x 8 action directly from the full dream and compare it only afterward with that candidate's paired Cosmos 32 x 8 action. Log:
 
-- consistency score distribution;
+- standardized joint MAE, `exp(-joint_mae_std_units)`, binary gripper agreement, and final `r_cons`;
+- consistency-score distribution;
 - relation to candidate diversity;
 - obvious low-consistency examples;
 - dream artifacts/flicker sensitivity;
@@ -56,10 +56,20 @@ Remember: high internal consistency does not prove the dream is physically corre
 
 ## Calibration readiness
 
-Estimate useful per-channel scales/statistics for `r_cons`. Do not choose fusion weights yet solely from one tiny sample.
+Use the train-only seven-joint standard deviations stored in the checkpoint. The server score is fixed:
+
+`joint_mae_std_units = mean(abs(idm_joints - cosmos_joints) / train_joint_std)`
+
+`joint_cons = exp(-joint_mae_std_units)`
+
+`gripper_cons = mean((sigmoid(idm_gripper_logit) > 0.5) == (cosmos_gripper > 0.5))`
+
+`r_cons = 0.5 * joint_cons + 0.5 * gripper_cons`
+
+The API action convention already matches raw DROID/RoboLab (`0=open`, `1=closed`); do not apply another polarity flip.
 
 ## Exit
 
-M5 passes only when the IDM has credible held-out real-data performance and produces non-degenerate, interpretable dream consistency scores.
+M5 passes only when the complete fixed-1K validation result is credible, checkpoint verification reproduces it, and the exact direct dream/action score is finite, paired correctly, and non-degenerate on recorded candidate examples.
 
 Then hand off to `/integrate-wise-selector`.

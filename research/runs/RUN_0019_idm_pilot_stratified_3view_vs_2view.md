@@ -2,7 +2,7 @@
 
 ## Identity
 
-- status: `RUNNING`
+- status: `SUPERSEDED_BEFORE_RECORDED_RESULT`
 - run class: `screen`
 - milestone: M4_IDM_TRAIN
 - date/time: 2026-08-13 (~00:15Z)
@@ -51,17 +51,17 @@ CUDA_VISIBLE_DEVICES=1 python3 train.py --mode train --arch v1 --cameras wrist l
 ## Execution result
 
 - start time: 2026-08-13T~00:15Z
-- end time: TBD
-- exit status: TBD
+- end time: not recorded
+- exit status: unknown
 
 ## Observed evidence
 
-- IDM: TBD -- compare both against RUN_0009's 0.06857
+- IDM: no result was recorded; do not infer a winner
 
 ## Outcome
 
-- pass/fail: TBD
-- next action: TBD -- winner scales up to the full stratified budget (~39k windows)
+- pass/fail: `SUPERSEDED`
+- next action: do not resume the two-view pilot. Three views and the production 21K/1K data contract are fixed in `research/IDM_DESIGN.md`.
 
 ## Reproducibility checklist
 

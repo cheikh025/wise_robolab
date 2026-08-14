@@ -2,7 +2,7 @@
 
 ## Identity
 
-- status: `RUNNING`
+- status: `SUPERSEDED` (the receipt was never finalized; later RUN_0007-RUN_0019 records contain the actual debug/training evidence)
 - run class: `validation`
 - milestone: M4_IDM_TRAIN
 - associated progress report: research/progress/PROGRESS_0004_IDM_DATA.md (to be created)
@@ -105,10 +105,10 @@ See Setup section above, plus a follow-up inspection script (to be written) that
 
 ## Outcome
 
-- pass/fail: TBD
-- what was proven: TBD
-- what was **not** proven: TBD
-- next action: TBD
+- pass/fail: `SUPERSEDED_WITHOUT_FINAL_RESULT`
+- what was proven: nothing independently claimable from this incomplete receipt; later runs proved DROID loading and legacy training paths
+- what was **not** proven: the frozen production schema, selection, preprocessing, or architecture
+- next action: use RUN_0020 and the current runbook; do not resume this obsolete download recipe
 
 ## Exact rerun recipe
 

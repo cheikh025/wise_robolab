@@ -1,6 +1,6 @@
 # Machine-Specific Runbook
 
-Status: `M0_VERIFIED` — RoboLab/Isaac stack verified 2026-08-12. Cosmos/Robometer/DROID/IDM/WISE sections still pending their own milestones.
+Status: `M0-M3_VERIFIED`; production M4 IDM code is implemented, while manifest generation, preprocessing, training, and checkpoint verification are pending.
 
 This file must be filled by `/setup-wise-robolab-research` and updated whenever the machine, source revision, or execution path changes.
 
@@ -86,7 +86,7 @@ This file stores the **canonical currently verified setup**. It does not replace
 - action chunk size: 32 (one client `_needs_refresh` cycle = 32 executed env steps before the next policy call)
 - conditioning fps: 15.0 (matches RoboLab's measured 15Hz control rate from M0 — verify this always matches when changing tasks/registrations)
 - state input: `use_state=True`, `history_length=1`; joint position (7) + gripper position (1) sent as `observation/joint_position` / `observation/gripper_position`
-- image layout: client composes wrist (360x640, top) over left+right (each resized to 180x320, side by side, bottom) -> single **540x640x3** uint8 RGB panel sent as `observation/image`. Server's decoded dream comes back **528x640** (VAE rounds to a multiple of 16, per `spatial_compression_factor=16` in the model config) — 12 rows narrower than the 540 sent in, not yet exactly localized to which edge/axis.
+- image layout: the client sends a **540x640x3** uint8 panel: wrist at the top (360x640), then exterior 1 and exterior 2 (180x320 each) side by side. The verified decoded dream is **528x640**. Its versioned transport contract is a fixed split at row 360: wrist `0:360, 0:640`, exterior 1 `360:528, 0:320`, exterior 2 `360:528, 320:640`. The earlier edge detector's row 359 is the final wrist row, so the corresponding Python split index is 360.
 - decode-video mechanism: `--decode-video` (bare switch, no value) on the server adds a `"video"` key to the response: `uint8 numpy array, shape (T, H, W, 3)`, empirically measured as **(33, 528, 640, 3)** per policy call (33 = chunk 32 + 1 initial frame, 15fps -> 2.2s). The stock RoboLab client discards this field entirely — see the M1 client patch below to retain it.
 - randomness/seed behavior: `seed=0` (base), `deterministic_seed=False` (default) -> **each call advances a NumPy RNG**, so repeated same-context requests return genuinely different candidates. Verified empirically (`research/tools/check_cosmos_diversity.py`, RUN_0002): K=5 identical requests -> pairwise action-chunk L2 distances mean=2.06 (min=1.26), zero duplicates. Do not assume this without checking — a fixed seed would silently collapse Best-of-K to K copies.
 - exact client command:
@@ -100,7 +100,7 @@ This file stores the **canonical currently verified setup**. It does not replace
     "openpi-client @ git+https://github.com/xuningy/openpi@aa6420561529593114160d05e5ad155792b272f3#subdirectory=packages/openpi-client"
   ```
 - client response fields: `{"action": np.ndarray[32,8], "video": np.ndarray[33,528,640,3] | absent}`. Gripper channel is index 7 (last).
-- gripper post-processing: client thresholds at 0.5 after receiving the chunk (`_postprocess_chunk`: `chunk[..., -1] = (chunk[..., -1] > 0.5)`). Server-side, gripper is inverted before sending (`action_np[:, -1] = 1.0 - action_np[:, -1]`) — the two are complementary halves of the same convention, don't "fix" one without checking the other.
+- gripper post-processing: the external DROID/RoboLab convention is 0=open, 1=closed. The official Cosmos server flips that value for its internal model convention and flips it back before returning the response. RoboLab then thresholds the returned float at 0.5. Do not add another polarity flip in the client, IDM server, or comparison path.
 - dream-video retention patch: `policies/cosmos3/client.py` (commit `16513ca` on `wise/m0-setup`) — tracks `env_id` via `_extract_observation`, writes any `"video"` in the response to `<output_dir>/dreams/dream_env{id}_call{NNN}.mp4` using RoboLab's own `VideoWriter`, before returning the action array unchanged. Does not alter action semantics.
 
 ## Robometer environment
@@ -126,33 +126,43 @@ This file stores the **canonical currently verified setup**. It does not replace
     --task "<verbatim env instruction>"
   ```
 - max frames/subsampling behavior: `max_frames=8` (from checkpoint config); `linspace_subsample_frames` keeps first+last frame always, discrete progress head with `num_bins=10`, `model_type=default`
-- chosen view/input packaging: **one camera per call, three views scored independently, never composited** (RBM-1M has no tiled-frame examples; DROID deployment sends one exterior view). Dream panel (528x640) split via seam-row detection (ratio-predicted 352 vs. empirically-detected 359 on this checkpoint/data — used the detected value; the discrepancy itself is worth another look, not fully closed). Sensor panel (2560x360, head|left|right|wrist) split by fixed column ranges; head is skipped (rendered but never sent to the policy).
+- chosen view/input packaging: **one camera per call, three views scored independently, never composited** (RBM-1M has no tiled-frame examples; DROID deployment sends one exterior view). Split the decoded dream by the fixed 528x640 transport contract at row 360, not by content. Sensor panels (2560x360, head|left|right|wrist) use fixed column ranges; head is skipped.
 - score scalarization: `last` (final-frame progress), full per-frame curves retained for later re-scalarization (e.g. `last - first`)
 - measured latency/VRAM: approximate only — ~4-5s/call (model load amortized across 30 calls in ~2.5 min total); VRAM not sampled live. **Needs a dedicated micro-benchmark before fixing K in M3.**
 
 ## DROID data
 
-- dataset form/path:
-- debug subset path:
-- image fields:
-- state fields:
-- action target fields:
-- dataset control rate:
-- train/val split:
-- temporal alignment rule:
-- preprocessing/crop/resize:
+- source: `nvidia/Cosmos3-DROID@5c11a20accb11497270a5247a7f1e66ad04c956c`, pinned in code and checkpoint configuration
+- identity: success and failure roots have independent numeric episode namespaces; the canonical key is `(dataset_split, episode_index)`. Join the official `episode_id` to raw DROID `metadata_*.json` for `lab`, `building`, `scene_id`, `uuid`, and `robot_serial`. Use `lab|building|scene_id` as the reproducible raw-scene key.
+- population: 71,907 published episodes; 71,253 are eligible for one 33-frame window (`length>=33`), comprising 57,584 successes and 13,669 failures. The 654 shorter episodes are excluded only because they cannot produce the required input/target pair.
+- image fields: `observation.image.wrist_image_left`, `observation.image.exterior_image_1_left`, `observation.image.exterior_image_2_left`; native 640x360 RGB at 15 Hz
+- target fields: `action.joint_position` (7 absolute commanded joint positions) and `action.gripper_position` (source float in [0,1], thresholded at `>0.5` for the executed/training binary target, 0=open and 1=closed)
+- split: deterministic 21,000 train and 1,000 validation manifests using the exact eligible-population lab x outcome quotas in `research/IDM_DESIGN.md`; all labs and both outcomes are retained, and validation raw scenes are excluded entirely from train. There is no test split.
+- windows: every selected frame is retained; no idle or content filtering. Train uses stride 16 plus an end-aligned tail, validation uses stride 32 plus an end-aligned tail.
+- alignment: frames `s..s+32` label actions `s..s+31`; action row `t` is the command across visual transition `frame[t] -> frame[t+1]`
+- preprocessing: aspect-preserving, no-crop letterbox to 128x224 with one canonical Torch bilinear-antialias implementation for training and inference
+- provenance/audit: store source revision, manifest SHA256, joint quota counts, episode/scene overlap checks, window counts/shares, and all three cameras' shard episode/frame/window shares
 
 ## IDM
 
-- implementation path: `/workspace/wise_idm/` (separate project dir, own git repo, commit `58b3160`): `droid_dataset.py` (`DroidIDMDataset`), `model.py` (`DroidIDM` / `SmallCNNBackbone`, no VAE roundtrip per explicit user constraint), `train.py`, `preprocess_videos.py` (video pre-decode cache), `verify_checkpoint.py` (save/reload verification)
-- architecture: full 33-frame dream video (no subsampling) x 3 cameras -> `DroidIDM` -> 32-step action chunk (7 joints + gripper). Configurable width/depth (`--cnn-width, --d-model, --n-heads, --n-encoder-layers, --n-decoder-layers`); baseline is d_model=256, 4+4 layers, 8 heads, ~9.0M params.
-- config path: stored inline in each checkpoint's `config` dict (image_size, num_frames, cnn_width, d_model, n_heads, n_encoder/decoder_layers, action_horizon, proprio_dim, ffn_dim, dropout)
-- training command: see `research/runs/RUN_0009_idm_500ep_training.md` for the exact reproducible command (500-episode baseline: `python3 train.py --mode train --train-episodes $(seq 0 449) --val-episodes $(seq 450 499) --batch-size 16 --epochs 40 --lr 3e-4 --seed 0`)
-- validation command: `python3 verify_checkpoint.py --checkpoint <ckpt> --val-episodes <...>` (checkpoint save/reload verification, training ladder stage 3)
-- checkpoint path: `/workspace/wise_idm/checkpoints_500ep/best.pt` (current best, RUN_0009: epoch 30/40, val_mean_joint_mae=0.06857, val_gripper_accuracy=0.98685). RUN_0010 confirmed the baseline architecture (9.0M params) beats a wide/deep 23.8M-param variant by ~17% relative at this data scale (data-limited, not capacity-limited) — baseline config is the carried-forward reference. A 5000-episode retrain of this same baseline architecture (pending download) may still supersede this checkpoint.
-- normalization stats: joint stats (mean/std, 7-dim, gripper excluded) computed from the train split via `compute_joint_stats()`, stored in each checkpoint's `joint_stats` field; gripper uses raw BCE target (no normalization) with `pos_weight` from `compute_gripper_pos_weight()`.
-- loss: joints = SmoothL1 on standardized values; gripper = `BCEWithLogitsLoss(pos_weight=...)` (switched from an initial SmoothL1-on-raw-gripper design that plateaued at an uninformative-predictor loss level, per user direction "switch gripper to BCE loss")
-- dream-inference command: not yet run end-to-end on a real Cosmos dream video (M5, pending)
+- implementation path: `/workspace/wise_idm/` (separate repository). Production entry points are `build_selection_catalog.py`, `select_manifests.py`, `preprocess_videos.py`, `train.py`, `verify_checkpoint.py`, `infer_on_dream.py`, and `idm_server.py`.
+- architecture ID: `wise_resnet50_transformer_v1`, approximately 34.85M parameters. For each adjacent pair and camera, concatenate RGB into six channels; use shared torchvision ResNet50 `IMAGENET1K_V2` weights through layer3; apply full-channel spatial softmax to the 1024x8x14 map; project to width 512; fuse the three views with a two-layer Transformer; process all 32 transitions with a six-layer, eight-head, noncausal temporal Transformer; predict aligned 7-D joints and one binary gripper logit directly. There is no proprioception, action-query decoder, action encoder, verifier branch, language, or Cosmos feature path.
+- loss/defaults: train-only per-joint mean/std, standardized SmoothL1 joints, class-balanced binary gripper BCE; AdamW, OneCycleLR, BF16, batch 1/GPU, gradient accumulation 8, learning rate `1e-4`, 20 epochs. Checkpoints include architecture/data/preprocessing/manifests/stats, optimizer/scheduler/scaler, and RNG state for guarded resume.
+- production checkpoint: **pending**. RUN_0009 through RUN_0019 are immutable legacy/pilot history and are not compatible production checkpoints.
+- canonical commands (create a run receipt and replace paths before execution):
+  ```bash
+  cd /workspace/wise_idm
+  python3 build_selection_catalog.py --raw-metadata /data/droid_raw/1.0.1 --output manifests/catalog.parquet
+  python3 select_manifests.py --catalog manifests/catalog.parquet --out-dir manifests --seed 0
+  python3 preprocess_videos.py --manifest manifests/train_21k.csv
+  python3 preprocess_videos.py --manifest manifests/val_1k.csv
+  torchrun --standalone --nproc_per_node=2 train.py --mode train \
+    --train-manifest manifests/train_21k.csv --val-manifest manifests/val_1k.csv \
+    --batch-size 1 --gradient-accumulation 8 --epochs 20 --lr 1e-4 \
+    --out-dir checkpoints_production --log-dir tb_logs_production
+  python3 verify_checkpoint.py --checkpoint checkpoints_production/best.pt \
+    --val-manifest manifests/val_1k.csv --batch-size 1
+  ```
 
 ## WISE integration
 
@@ -187,4 +197,4 @@ This file stores the **canonical currently verified setup**. It does not replace
 - **`Warp CUDA error: Failed to get driver entry point 'cuDeviceGetUuid'` / `CUDA error 36`**: appeared during `run_empty.py` (not during `pytest`). Driver here (580.95.05) is on the validated R580 branch per bootstrap notes, and the run completed successfully end-to-end — treated as benign noise on this box, distinct from the R590/`ERROR_DEVICE_LOST` failure mode. Re-open this if a run actually fails with `ERROR_DEVICE_LOST`.
 - **`omni.usd` "Unresolved reference prim path" warnings for unrelated scenes** (e.g. `assets/scenes/ladle_pot.usda`) appear during startup even when running a different task (`BananaInBowlTask`) — RoboLab evidently USD-validates multiple registered scenes at process boot. Benign; pre-existing asset-library warning, not caused by local changes.
 - **Robometer: `ImportError: cannot import name 'ScalingType' from 'torch.nn.functional'`** on any import that touches `robometer.utils.save` (-> `peft` -> `transformers.quantizers.quantizer_torchao` -> `torchao`). Cause: `torchao` is pulled in transitively (not pinned in `robometer/pyproject.toml`, likely via `unsloth`/`trl`) and resolves to a version (`0.18.0` observed) that needs torch APIs newer than the pinned `torch==2.8.0`. Fix: `uv pip install "torchao<0.10"` (resolves to `0.9.0`) inside the robometer venv. This is **not** persisted in `pyproject.toml`, so **re-apply after every fresh `uv sync --extra robometer`** until upstream pins a compatible version.
-- **Robometer dream-panel seam row**: ratio prediction (`h*2/3`) and empirical edge-detection disagree by 7px (352 vs 359) on every dream clip scored so far, consistently. The script's fallback (use the detected value, flag the mismatch) handled it fine, but the actual cause of the disagreement is still unresolved — same open question the bootstrap notes flagged ("where the dream loses its 12 rows"), now with a slightly different measured number. Revisit if it ever matters precisely (e.g. pixel-exact IDM input alignment in M4/M5).
+- **Decoded dream geometry differs from the request panel.** The client sends 540x640 but the verified decoded video is 528x640. Use the versioned fixed split at row 360. The historical detected boundary row 359 is the last wrist pixel, not a competing split index. Content-based seam detection is not part of production IDM preprocessing.

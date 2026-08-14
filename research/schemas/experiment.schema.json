@@ -37,6 +37,7 @@
         "planned",
         "running",
         "completed",
+        "aborted",
         "failed",
         "blocked"
       ]
@@ -50,6 +51,10 @@
         "BRANCH",
         "RETEST",
         "MILESTONE_PASS",
+        "MILESTONE_FAIL",
+        "COMPARISON",
+        "ABORTED",
+        "SUPERSEDED",
         "MILESTONE_BLOCKED"
       ]
     },

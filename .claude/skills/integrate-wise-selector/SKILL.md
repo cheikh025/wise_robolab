@@ -1,6 +1,6 @@
 ---
 name: integrate-wise-selector
-description: Integrate full WISE selection into RoboLab/Cosmos using separable action-quality, IDM-consistency, and Robometer-progress scores with explicit candidate-relative calibration, logging, configurable ablations, and no speculative environment execution.
+description: Integrate full WISE selection into RoboLab/Cosmos using separable action-quality, the frozen vision-only IDM's exact direct full-dream consistency score, and Robometer progress, with complete candidate pairing and no speculative execution.
 ---
 
 # Integrate Full WISE
@@ -38,7 +38,28 @@ Keep raw penalty subterms for diagnostics.
 
 ## r_cons
 
-Run the validated IDM on each candidate's imagined transition using the same preprocessing as M5, including initial proprioception. Compare IDM reconstruction to that candidate's Cosmos action in normalized action space, with separate gripper treatment.
+For each candidate, send the complete decoded dream to the frozen IDM and compare its direct prediction with that same candidate's paired Cosmos action only after inference. The candidate action is a comparison target, never an IDM input. Do not provide initial robot state/proprioception, language/instruction, task identity, success/failure, lab/scene identity, Robometer features, or any learned verifier signal to the IDM.
+
+Require the verified production shapes and preprocessing:
+
+- dream: 33 x 528 x 640 x 3 RGB;
+- fixed panel split at row 360: wrist 360 x 640, exterior 1 bottom-left 168 x 320, exterior 2 bottom-right 168 x 320;
+- aspect-preserving letterbox of each view to 128 x 224;
+- IDM output and paired Cosmos action: 32 x 8, with seven absolute joint positions and binary gripper convention `0=open`, `1=closed`.
+
+Reject non-finite or shape-mismatched inputs. Do not add a polarity flip: the Cosmos/RoboLab API response already matches the raw DROID convention.
+
+Compute the raw server score exactly from checkpoint train statistics:
+
+`joint_mae_std_units = mean(abs(idm_joints - cosmos_joints) / train_joint_std)`
+
+`joint_cons = exp(-joint_mae_std_units)`
+
+`gripper_cons = mean((sigmoid(idm_gripper_logit) > 0.5) == (cosmos_gripper > 0.5))`
+
+`r_cons = 0.5 * joint_cons + 0.5 * gripper_cons`
+
+Log all four quantities. Do not replace this direct score with a learned video-action verifier, auxiliary action encoder, action-query decoder, initial-state-conditioned model, or a Cosmos-trained IDM.
 
 ## r_task
 
@@ -65,6 +86,9 @@ Hard-invalid candidates may receive `-inf` before fusion.
 Add unit/integration tests for:
 
 - candidate/action/video pairing;
+- exact dream panel split, view order, preprocessing version, and 33-frame/32-action shapes;
+- proof that candidate action and proprioception are absent from IDM inputs;
+- exact `r_cons` arithmetic against a hand-computed fixture;
 - calibration with constant/outlier inputs;
 - gripper handling;
 - deterministic selection ties;

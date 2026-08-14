@@ -5,8 +5,8 @@ import argparse, json
 from pathlib import Path
 
 ALLOWED_MILESTONES = {"M0_SETUP","M1_COSMOS","M2_ROBOMETER_OFFLINE","M3_ROBOMETER_BESTOFK","M4_IDM_TRAIN","M5_IDM_VALIDATE","M6_WISE_INTEGRATE","M7_WISE_EXPERIMENT"}
-ALLOWED_STATUS = {"planned","running","completed","failed","blocked"}
-ALLOWED_DECISIONS = {"NONE","KEEP","REJECT","BRANCH","RETEST","MILESTONE_PASS","MILESTONE_BLOCKED"}
+ALLOWED_STATUS = {"planned","running","completed","aborted","failed","blocked"}
+ALLOWED_DECISIONS = {"NONE","KEEP","REJECT","BRANCH","RETEST","MILESTONE_PASS","MILESTONE_FAIL","MILESTONE_BLOCKED","COMPARISON","ABORTED","SUPERSEDED"}
 
 def validate(r):
     for k in ("id","name","milestone","status","decision","report"):

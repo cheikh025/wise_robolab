@@ -4,10 +4,12 @@ This is the operating workflow for the project.
 
 ## Universal validation rule
 
-Stages A–G are primarily **engineering validation** until the pipeline is ready for controlled experiments. For validation, deliberately use a small task/data budget:
+Stages A–G are primarily **engineering validation** until the pipeline is ready for controlled experiments. Outside the frozen 21,000/1,000-episode production IDM contract, deliberately use a small task/data budget:
 - one task/episode for basic smoke and wiring;
 - one to three representative RoboLab tasks with only a few episodes each for most subsystem/integration checks;
 - larger panels only when the current question genuinely requires more evidence.
+
+The production IDM allocation is not a pilot panel: do not shrink it into another test run or add a separate test split.
 
 Passing a milestone means the subsystem is reproducibly correct on the chosen validation evidence; it does **not** mean its RoboLab performance has been established. Do not spend the 120-task benchmark budget on setup validation.
 
@@ -67,9 +69,9 @@ Compare against B=1 / first-sample and random-candidate selection under matched 
 
 Run `/build-droid-idm`.
 
-Begin with the DROID debug subset for data/alignment validation, then scale training only after labels, frame/action timing, camera mapping, and normalization are proven.
+Build the deterministic production manifests from `nvidia/Cosmos3-DROID` revision `5c11a20accb11497270a5247a7f1e66ad04c956c`: 21,000 training episodes and 1,000 scene-disjoint validation episodes using the exact joint lab x outcome quotas in `research/IDM_DESIGN.md`. Use shard-aware selection, retain every selected frame, and audit the induced window distribution. Do not create a pilot or test split.
 
-Primary design: DreamZero-like motion IDM adapted to 3-view DROID, 32-step 8-D Cosmos joint-position action chunks, and initial proprioception.
+Train the frozen direct vision-to-action architecture: three synchronized RGB views, 33 consecutive frames, adjacent-frame motion pairs, shared ResNet-50 spatial features, cross-view fusion, a bidirectional temporal Transformer, and aligned 32-step joint/gripper heads. Inputs are vision only. Do not add initial state, proprioception, language, metadata, a learned verifier, or an auxiliary action encoder. Cosmos is not used in IDM training.
 
 ## Stage F — validate the IDM
 
@@ -77,13 +79,13 @@ Run `/validate-droid-idm`.
 
 Validation ladder:
 
-1. held-out real DROID clips -> reconstruct DROID commanded actions;
-2. camera/view and fusion ablations;
-3. temporal alignment sanity tests;
-4. Cosmos-generated dreams -> infer actions and compare with Cosmos co-generated actions;
-5. analyze real-vs-generated domain shift and consistency-score distributions.
+1. evaluate commanded-action reconstruction over the frozen 1,000-episode DROID validation manifest;
+2. verify checkpoint identity, training-only normalization, temporal alignment, per-joint errors, and binary gripper accuracy;
+3. decode complete Cosmos dreams as fixed `33 x 528 x 640 x 3` RGB tensors split at row 360;
+4. infer 32 x 8 actions from each dream and compare them with the paired Cosmos action using the frozen direct `r_cons` formula;
+5. characterize real-validation and generated-dream consistency distributions before selector integration.
 
-Do not plug an unvalidated IDM into WISE merely because training loss decreases.
+Do not change views, filter idle frames, add a test set, or start an architecture-ablation campaign as a substitute for validating the production contract. Do not plug the IDM into WISE merely because training loss decreases.
 
 ## Stage G — integrate full WISE
 

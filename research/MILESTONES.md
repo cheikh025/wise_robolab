@@ -53,23 +53,27 @@ Exit criteria:
 
 Exit criteria:
 
-- DROID sample loading/alignment verified on a tiny/debug subset;
-- commanded 7-D joint-position + gripper targets are taken from the correct DROID fields, not accidentally from the convenience velocity `action` field;
-- three-view primary data path works;
-- initial proprioception is included;
-- training, checkpointing, normalization stats, and reload work;
-- training scaled beyond debug only after alignment checks pass.
+- `nvidia/Cosmos3-DROID` is pinned to revision `5c11a20accb11497270a5247a7f1e66ad04c956c`;
+- deterministic, scene-disjoint, shard-aware manifests contain exactly 21,000 training and 1,000 validation episodes with the frozen lab x outcome quotas;
+- selection applies only the unavoidable `length >= 33` eligibility rule, preserves every selected frame, and reports episode plus window/shard audits;
+- 33 synchronized frames align to 32 action rows using the verified frame `t` -> frame `t+1` convention, with train stride 16, validation stride 32, and an end-aligned tail;
+- commanded 7-D absolute joint-position targets come from the correct DROID fields rather than the convenience velocity-style `action` field;
+- continuous raw gripper targets are thresholded at `> 0.5` into `0 = open`, `1 = closed` without an extra Cosmos polarity flip;
+- the three-view RGB-only data path works with no initial state, proprioception, language, outcome, task, or lab model input;
+- the frozen ResNet-50 spatial-softmax/cross-view/temporal-Transformer model trains, checkpoints, resumes, reloads, and preserves training-only normalization statistics;
+- there is no separate test split, learned verifier, auxiliary action encoder, smoothness loss, or idle loss.
 
 ## M5 — IDM validation
 
 Exit criteria:
 
-- held-out real DROID action reconstruction metrics are meaningful;
-- gripper accuracy and per-joint errors reported;
-- temporal/alignment tests exclude obvious label offset mistakes;
-- early/late fusion and view ablations are available when useful;
-- Cosmos-dream inference works;
-- consistency-score distributions and real-vs-dream domain shift are characterized.
+- the full frozen 1,000-episode validation manifest is evaluated without training-scene leakage;
+- standardized and physical-unit joint errors, per-joint diagnostics, and binary gripper accuracy are reported;
+- checkpoint verification reproduces validation metrics and rejects architecture, preprocessing, source-revision, manifest, or normalization mismatches;
+- temporal/alignment checks exclude frame/action offsets without changing or filtering the production data;
+- inference accepts only the fixed three-view `33 x 528 x 640 x 3` decoded dream layout split at row 360 and uses the same aspect-preserving letterbox as training;
+- direct `r_cons` computation compares the IDM's 32 x 8 prediction with the paired Cosmos action using the frozen joint-error/gripper-agreement formula;
+- real-validation and generated-dream consistency distributions are recorded as diagnostics before WISE integration.
 
 ## M6 — Full WISE integration
 
