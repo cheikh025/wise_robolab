@@ -1,0 +1,17 @@
+diff --git a/cosmos_framework/scripts/action_policy_server_robolab.py b/cosmos_framework/scripts/action_policy_server_robolab.py
+index b93d5af..212beba 100644
+--- a/cosmos_framework/scripts/action_policy_server_robolab.py
++++ b/cosmos_framework/scripts/action_policy_server_robolab.py
+@@ -616,6 +616,12 @@ class RobolabPolicyService:
+         outputs: dict[str, Any] = {"action": action_np}
+         if self.cfg.decode_video:
+             pred_vision_latent = samples["vision"][0]  # [C,T,H,W]
++            # Raw pre-decode latent, same space the diffusion/flow model itself
++            # operates in. Exposed alongside the decoded video so external
++            # consumers (e.g. WISE benchmark baselines) can score candidates in
++            # latent space directly instead of decoding to RGB and re-encoding
++            # with a separate model.
++            outputs["vision_latent"] = pred_vision_latent.detach().cpu().numpy()
+             video = self.model.decode(pred_vision_latent)  # [1,C,T,H,W]
+             video = ((video[0].clamp(-1.0, 1.0) + 1.0) * 127.5).to(torch.uint8).permute(1, 2, 3, 0)  # [T,H,W,3]
+             outputs["video"] = video.detach().cpu().numpy()
